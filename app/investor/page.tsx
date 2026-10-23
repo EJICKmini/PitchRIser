@@ -41,20 +41,57 @@ const sampleStartups: Startup[] = [
   },
 ]
 
-function imageForIndustry(industry: string) {
+type PitchCategory = 'climate' | 'energy' | 'health' | 'other'
+
+const displayNames: Record<PitchCategory, string[]> = {
+  climate: ['Tideframe', 'Coastwise', 'Currentline'],
+  energy: ['Emberline', 'Morrow Grid', 'Daymark'],
+  health: ['Nearwell', 'Fieldwell', 'Juniper Care'],
+  other: ['Northline', 'Openfield', 'Clearpath'],
+}
+
+function categoryForIndustry(industry: string): PitchCategory {
   const normalizedIndustry = industry.toLowerCase()
 
   if (/(climate|coast|ocean|maritime|flood|water)/.test(normalizedIndustry)) {
-    return sampleStartups[0].image_url!
+    return 'climate'
   }
   if (/(energy|solar|clean)/.test(normalizedIndustry)) {
-    return sampleStartups[1].image_url!
+    return 'energy'
   }
   if (/(health|medical|biotech|care|wellness)/.test(normalizedIndustry)) {
-    return sampleStartups[2].image_url!
+    return 'health'
   }
 
-  return sampleStartups[0].image_url!
+  return 'other'
+}
+
+function imageForIndustry(industry: string, index = 0) {
+  const category = categoryForIndustry(industry)
+  if (category === 'climate') return sampleStartups[0].image_url!
+  if (category === 'energy') return sampleStartups[1].image_url!
+  if (category === 'health') return sampleStartups[2].image_url!
+  return sampleStartups[index % sampleStartups.length].image_url!
+}
+
+function styleFeedStartups(startups: Startup[]) {
+  const categoryCounts: Record<PitchCategory, number> = {
+    climate: 0,
+    energy: 0,
+    health: 0,
+    other: 0,
+  }
+
+  return startups.map((startup, index) => {
+    const category = categoryForIndustry(startup.industry || '')
+    const nameIndex = categoryCounts[category]++
+
+    return {
+      ...startup,
+      name: displayNames[category][nameIndex % displayNames[category].length],
+      image_url: imageForIndustry(startup.industry || '', index),
+    }
+  })
 }
 
 function StartupMedia({ startup, fallbackImage }: { startup: Startup; fallbackImage: string }) {
@@ -106,7 +143,7 @@ export default function InvestorDashboard() {
           .select('*, ai_scores(*)')
           .order('created_at', { ascending: false })
         if (!error && data?.length) {
-          setStartups(data as Startup[])
+          setStartups(styleFeedStartups(data as Startup[]))
           setCurrent(0)
         }
       } catch {
