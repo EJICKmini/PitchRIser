@@ -1,7 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import Image from 'next/image'
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 import { Heart, Bookmark, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Startup {
@@ -10,148 +14,24 @@ interface Startup {
   description: string
   industry: string
   video_url: string
-  image_url?: string
   ai_scores?: { score_out_of_100: number; risk_level: string; market_potential: string }[]
 }
 
-const sampleStartups: Startup[] = [
-  {
-    id: 'sample-tideframe',
-    name: 'Tideframe',
-    description: 'Neighborhood flood signals, before the water rises. A fictional concept for exploring coastal resilience.',
-    industry: 'Climate resilience',
-    video_url: '',
-    image_url: '/feed/tideframe.jpg',
-  },
-  {
-    id: 'sample-emberline',
-    name: 'Emberline',
-    description: 'Thermal storage that shifts clean power into the hours people need it most. A fictional clean-energy concept.',
-    industry: 'Clean energy',
-    video_url: '',
-    image_url: '/feed/emberline.jpg',
-  },
-  {
-    id: 'sample-nearwell',
-    name: 'Nearwell',
-    description: 'Preventive care designed to meet people closer to home. A fictional community-health concept.',
-    industry: 'Community health',
-    video_url: '',
-    image_url: '/feed/nearwell.jpg',
-  },
-]
-
-type PitchCategory = 'climate' | 'energy' | 'health' | 'other'
-
-const displayNames: Record<PitchCategory, string[]> = {
-  climate: ['Tideframe', 'Coastwise', 'Currentline'],
-  energy: ['Emberline', 'Morrow Grid', 'Daymark'],
-  health: ['Nearwell', 'Fieldwell', 'Juniper Care'],
-  other: ['Northline', 'Openfield', 'Clearpath'],
-}
-
-function categoryForIndustry(industry: string): PitchCategory {
-  const normalizedIndustry = industry.toLowerCase()
-
-  if (/(climate|coast|ocean|maritime|flood|water)/.test(normalizedIndustry)) {
-    return 'climate'
-  }
-  if (/(energy|solar|clean)/.test(normalizedIndustry)) {
-    return 'energy'
-  }
-  if (/(health|medical|biotech|care|wellness)/.test(normalizedIndustry)) {
-    return 'health'
-  }
-
-  return 'other'
-}
-
-function imageForIndustry(industry: string, index = 0) {
-  const category = categoryForIndustry(industry)
-  if (category === 'climate') return sampleStartups[0].image_url!
-  if (category === 'energy') return sampleStartups[1].image_url!
-  if (category === 'health') return sampleStartups[2].image_url!
-  return sampleStartups[index % sampleStartups.length].image_url!
-}
-
-function styleFeedStartups(startups: Startup[]) {
-  const categoryCounts: Record<PitchCategory, number> = {
-    climate: 0,
-    energy: 0,
-    health: 0,
-    other: 0,
-  }
-
-  return startups.map((startup, index) => {
-    const category = categoryForIndustry(startup.industry || '')
-    const nameIndex = categoryCounts[category]++
-
-    return {
-      ...startup,
-      name: displayNames[category][nameIndex % displayNames[category].length],
-      image_url: imageForIndustry(startup.industry || '', index),
-    }
-  })
-}
-
-function StartupMedia({ startup, fallbackImage }: { startup: Startup; fallbackImage: string }) {
-  const [videoFailed, setVideoFailed] = useState(false)
-
-  if (startup.video_url && !videoFailed) {
-    return (
-      <video
-        src={startup.video_url}
-        poster={fallbackImage}
-        className="absolute inset-0 w-full h-full object-cover"
-        autoPlay
-        muted
-        loop
-        playsInline
-        onError={() => setVideoFailed(true)}
-      />
-    )
-  }
-
-  return (
-    <Image
-      src={fallbackImage}
-      alt={`${startup.industry} concept`}
-      width={1080}
-      height={1800}
-      unoptimized
-      className="absolute inset-0 w-full h-full object-cover"
-      priority
-    />
-  )
-}
-
 export default function InvestorDashboard() {
-  const [startups, setStartups] = useState<Startup[]>(sampleStartups)
+  const [startups, setStartups] = useState<Startup[]>([])
   const [current, setCurrent] = useState(0)
 
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-    if (!url || !key) return
-
-    const loadStartups = async () => {
-      try {
-        const supabase = createBrowserClient(url, key)
-        const { data, error } = await supabase
-          .from('startups')
-          .select('*, ai_scores(*)')
-          .order('created_at', { ascending: false })
-        if (!error && data?.length) {
-          setStartups(styleFeedStartups(data as Startup[]))
-          setCurrent(0)
-        }
-      } catch {
-        // Keep the sample pitches visible if Supabase is unavailable.
-      }
-    }
-
-    void loadStartups()
+    supabase
+      .from('startups')
+      .select('*, ai_scores(*)')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => data && setStartups(data))
   }, [])
 
   const startup = startups[current]
@@ -163,11 +43,7 @@ export default function InvestorDashboard() {
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
       <div className="relative w-full max-w-sm h-[85vh] bg-[#111] rounded-3xl overflow-hidden border border-white/10">
         {/* Video */}
-        <StartupMedia
-          key={startup.id}
-          startup={startup}
-          fallbackImage={startup.image_url || imageForIndustry(startup.industry)}
-        />
+        <video src={startup.video_url} className="absolute inset-0 w-full h-full object-cover" autoPlay muted loop />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/20" />
 
         {/* AI Score badge */}
