@@ -98,22 +98,23 @@ export default function InvestorDashboard() {
 
     if (!url || !key) return
 
-    try {
-      const supabase = createBrowserClient(url, key)
-      void supabase
-        .from('startups')
-        .select('*, ai_scores(*)')
-        .order('created_at', { ascending: false })
-        .then(({ data }) => {
-          if (data?.length) {
-            setStartups(data as Startup[])
-            setCurrent(0)
-          }
-        })
-        .catch(() => {})
-    } catch {
-      // Keep the sample pitches visible if Supabase is unavailable.
+    const loadStartups = async () => {
+      try {
+        const supabase = createBrowserClient(url, key)
+        const { data, error } = await supabase
+          .from('startups')
+          .select('*, ai_scores(*)')
+          .order('created_at', { ascending: false })
+        if (!error && data?.length) {
+          setStartups(data as Startup[])
+          setCurrent(0)
+        }
+      } catch {
+        // Keep the sample pitches visible if Supabase is unavailable.
+      }
     }
+
+    void loadStartups()
   }, [])
 
   const startup = startups[current]
