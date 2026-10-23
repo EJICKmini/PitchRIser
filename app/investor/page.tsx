@@ -1,10 +1,8 @@
 'use client'
-
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import { ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronLeft, ChevronRight, CirclePlay, Sparkles } from 'lucide-react'
-import PitchArtwork from '../components/PitchArtwork'
+import Image from 'next/image'
+import { Heart, Bookmark, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Startup {
   id: string
@@ -12,6 +10,7 @@ interface Startup {
   description: string
   industry: string
   video_url: string
+  image_url?: string
   ai_scores?: { score_out_of_100: number; risk_level: string; market_potential: string }[]
 }
 
@@ -22,6 +21,7 @@ const sampleStartups: Startup[] = [
     description: 'Neighborhood flood signals, before the water rises. A fictional concept for exploring coastal resilience.',
     industry: 'Climate resilience',
     video_url: '',
+    image_url: '/feed/tideframe.jpg',
   },
   {
     id: 'sample-emberline',
@@ -29,6 +29,7 @@ const sampleStartups: Startup[] = [
     description: 'Thermal storage that shifts clean power into the hours people need it most. A fictional clean-energy concept.',
     industry: 'Clean energy',
     video_url: '',
+    image_url: '/feed/emberline.jpg',
   },
   {
     id: 'sample-nearwell',
@@ -36,188 +37,143 @@ const sampleStartups: Startup[] = [
     description: 'Preventive care designed to meet people closer to home. A fictional community-health concept.',
     industry: 'Community health',
     video_url: '',
+    image_url: '/feed/nearwell.jpg',
   },
 ]
 
-const artMoods = ['ocean', 'energy', 'health'] as const
+function imageForIndustry(industry: string) {
+  const normalizedIndustry = industry.toLowerCase()
 
-function PitchMedia({ startup, mood }: { startup: Startup; mood: (typeof artMoods)[number] }) {
+  if (/(climate|coast|ocean|maritime|flood|water)/.test(normalizedIndustry)) {
+    return sampleStartups[0].image_url!
+  }
+  if (/(energy|solar|clean)/.test(normalizedIndustry)) {
+    return sampleStartups[1].image_url!
+  }
+  if (/(health|medical|biotech|care|wellness)/.test(normalizedIndustry)) {
+    return sampleStartups[2].image_url!
+  }
+
+  return sampleStartups[0].image_url!
+}
+
+function StartupMedia({ startup, fallbackImage }: { startup: Startup; fallbackImage: string }) {
   const [videoFailed, setVideoFailed] = useState(false)
-
-  useEffect(() => {
-    setVideoFailed(false)
-  }, [startup.id, startup.video_url])
 
   if (startup.video_url && !videoFailed) {
     return (
       <video
-        className="pitch-media-video"
         src={startup.video_url}
+        poster={fallbackImage}
+        className="absolute inset-0 w-full h-full object-cover"
         autoPlay
         muted
         loop
         playsInline
-        controls
         onError={() => setVideoFailed(true)}
-        aria-label={`${startup.name} pitch video`}
       />
     )
   }
 
-  return <PitchArtwork mood={mood} label={`Original animated concept artwork for ${startup.industry}`} />
+  return (
+    <Image
+      src={fallbackImage}
+      alt={`${startup.industry} concept`}
+      width={1080}
+      height={1800}
+      unoptimized
+      className="absolute inset-0 w-full h-full object-cover"
+      priority
+    />
+  )
 }
 
 export default function InvestorDashboard() {
   const [startups, setStartups] = useState<Startup[]>(sampleStartups)
   const [current, setCurrent] = useState(0)
-  const [isPreview, setIsPreview] = useState(true)
-  const [loading, setLoading] = useState(true)
-  const [saved, setSaved] = useState<string[]>([])
 
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    const useSampleFeed = () => {
-      setStartups(sampleStartups)
-      setIsPreview(true)
-      setCurrent(0)
-      setLoading(false)
-    }
+    if (!url || !key) return
 
-    if (!url || !key) {
-      useSampleFeed()
-      return
-    }
-
-    let supabase: ReturnType<typeof createBrowserClient>
     try {
-      supabase = createBrowserClient(url, key)
+      const supabase = createBrowserClient(url, key)
+      void supabase
+        .from('startups')
+        .select('*, ai_scores(*)')
+        .order('created_at', { ascending: false })
+        .then(({ data }) => {
+          if (data?.length) {
+            setStartups(data as Startup[])
+            setCurrent(0)
+          }
+        })
+        .catch(() => {})
     } catch {
-      useSampleFeed()
-      return
+      // Keep the sample pitches visible if Supabase is unavailable.
     }
-    let active = true
-
-    async function loadFeed() {
-      try {
-        const { data, error } = await supabase
-          .from('startups')
-          .select('*, ai_scores(*)')
-          .order('created_at', { ascending: false })
-
-        if (!active) return
-
-        if (!error && data?.length) {
-          setStartups(data as Startup[])
-          setIsPreview(false)
-          setCurrent(0)
-        } else {
-          useSampleFeed()
-        }
-      } catch {
-        if (active) useSampleFeed()
-      }
-
-      if (active) setLoading(false)
-    }
-
-    void loadFeed()
-    return () => { active = false }
   }, [])
 
-  const startup = startups[current] ?? sampleStartups[0]
+  const startup = startups[current]
+  if (!startup) return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">Loading feed...</div>
+
   const score = startup.ai_scores?.[0]
-  const mood = artMoods[current % artMoods.length]
-  const isSaved = saved.includes(startup.id)
-
-  function move(direction: number) {
-    setCurrent((index) => (index + direction + startups.length) % startups.length)
-  }
-
-  function toggleSaved() {
-    setSaved((currentSaved) => currentSaved.includes(startup.id)
-      ? currentSaved.filter((id) => id !== startup.id)
-      : [...currentSaved, startup.id])
-  }
 
   return (
-    <main className="page-shell investor-page">
-      <header className="site-nav investor-nav">
-        <Link href="/" className="brand" aria-label="Pitchriser home">
-          <span className="brand-mark" aria-hidden="true">P</span>
-          <span>pitchriser</span>
-        </Link>
-        <div className="nav-links">
-          <Link href="/founder" className="nav-cta">For founders <ArrowUpRight size={15} /></Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="relative w-full max-w-sm h-[85vh] bg-[#111] rounded-3xl overflow-hidden border border-white/10">
+        {/* Video */}
+        <StartupMedia
+          key={startup.id}
+          startup={startup}
+          fallbackImage={startup.image_url || imageForIndustry(startup.industry)}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/20" />
 
-      <section className="investor-heading">
-        <div>
-          <p className="eyebrow"><span className="eyebrow-spark"><Sparkles size={14} /></span> THE PITCH FEED</p>
-          <h1>Good ideas,<br /><span>closer up.</span></h1>
-        </div>
-        <div className="investor-heading-aside">
-          <p>Meet early-stage teams through a focused pitch, the problem they&apos;re solving, and the details worth a closer look.</p>
-          <div className="feed-status"><span className={loading ? 'status-dot status-dot-loading' : 'status-dot'} />{loading ? 'Finding the latest pitches' : isPreview ? 'Previewing sample ideas' : 'Founder pitches'}</div>
-        </div>
-      </section>
-
-      <section className="pitch-viewer" aria-label="Startup pitch viewer">
-        <div className="pitch-viewer-media">
-          <PitchMedia startup={startup} mood={mood} />
-          <div className="media-topline">
-            <span className="video-indicator"><span /> {isPreview ? 'CONCEPT PREVIEW' : 'FOUNDER PITCH'}</span>
-            <span className="feed-count">{String(current + 1).padStart(2, '0')} <i>/</i> {String(startups.length).padStart(2, '0')}</span>
+        {/* AI Score badge */}
+        {score && (
+          <div className="absolute top-4 right-4 bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-center backdrop-blur">
+            <div className="text-2xl font-bold text-emerald-400">{score.score_out_of_100}</div>
+            <div className="text-xs text-zinc-400">AI score</div>
           </div>
-          {!startup.video_url && <div className="media-bottom-label"><CirclePlay size={16} /> Original motion artwork</div>}
-          <div className="media-edge" aria-hidden="true" />
-        </div>
+        )}
 
-        <div className="pitch-viewer-detail">
-          <div className="detail-kicker-row">
-            <span className="industry-chip"><span />{startup.industry || 'Early stage'}</span>
-            <span className="detail-sequence">PITCH {String(current + 1).padStart(2, '0')}</span>
-          </div>
-
-          <div className="startup-copy">
-            {isPreview && <span className="sample-tag sample-tag-dark">FICTIONAL DEMO CONCEPT</span>}
-            <h2>{startup.name}</h2>
-            <p>{startup.description || 'A founder pitch is on its way.'}</p>
-          </div>
-
+        {/* Card info */}
+        <div className="absolute bottom-20 left-4 right-16 space-y-1">
+          <span className="bg-white/10 text-xs text-zinc-300 px-2 py-0.5 rounded-full">{startup.industry}</span>
+          <h2 className="text-xl font-bold text-white">{startup.name}</h2>
+          <p className="text-sm text-zinc-300 line-clamp-2">{startup.description}</p>
           {score && (
-            <div className="score-panel" aria-label="AI summary">
-              <div className="score-number"><strong>{score.score_out_of_100}</strong><span>AI signal</span></div>
-              <div className="score-detail"><span>Risk view</span><strong>{score.risk_level}</strong></div>
-              <div className="score-detail"><span>Market</span><strong>{score.market_potential}</strong></div>
+            <div className="flex gap-2 flex-wrap mt-1">
+              <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">Risk: {score.risk_level}</span>
+              <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full">{score.market_potential}</span>
             </div>
           )}
-
-          <div className="pitch-card-bottom">
-            <button type="button" onClick={toggleSaved} className={`button button-save${isSaved ? ' is-saved' : ''}`} aria-pressed={isSaved}>
-              {isSaved ? <Check size={16} /> : <Bookmark size={16} />}
-              {isSaved ? 'Saved to your list' : 'Save this idea'}
-            </button>
-            <div className="feed-controls" aria-label="Browse pitches">
-              <button type="button" onClick={() => move(-1)} aria-label="Previous pitch"><ChevronLeft size={18} /></button>
-              <button type="button" onClick={() => move(1)} aria-label="Next pitch"><ChevronRight size={18} /></button>
-            </div>
-          </div>
-
-          <div className="founder-nudge">
-            <span>Have a pitch of your own?</span>
-            <Link href="/founder">Share it with us <ArrowRight size={14} /></Link>
-          </div>
         </div>
-      </section>
 
-      <footer className="investor-footer">
-        <Link href="/" className="back-link"><ArrowLeft size={14} /> Back to Pitchriser</Link>
-        {isPreview && <p>Sample names and concepts are fictional. Real founder submissions appear here when available.</p>}
-        {!isPreview && <p>Founder names and media are shown as submitted.</p>}
-      </footer>
-    </main>
+        {/* Actions */}
+        <div className="absolute right-3 bottom-20 flex flex-col gap-4 items-center">
+          <button className="bg-white/10 p-3 rounded-full backdrop-blur hover:bg-red-500/30 transition">
+            <Heart className="w-5 h-5 text-white" />
+          </button>
+          <button className="bg-white/10 p-3 rounded-full backdrop-blur hover:bg-yellow-500/30 transition">
+            <Bookmark className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        {/* Nav */}
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
+          <button onClick={() => setCurrent(Math.max(0, current - 1))} className="bg-white/10 p-2 rounded-full">
+            <ChevronUp className="w-5 h-5 text-white" />
+          </button>
+          <span className="text-zinc-500 text-sm self-center">{current + 1} / {startups.length}</span>
+          <button onClick={() => setCurrent(Math.min(startups.length - 1, current + 1))} className="bg-white/10 p-2 rounded-full">
+            <ChevronDown className="w-5 h-5 text-white" />
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
