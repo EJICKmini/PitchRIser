@@ -1,11 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 import { Heart, Bookmark, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Startup {
@@ -20,22 +15,56 @@ interface Startup {
 export default function InvestorDashboard() {
   const [startups, setStartups] = useState<Startup[]>([])
   const [current, setCurrent] = useState(0)
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const [loading, setLoading] = useState(true)
+  const [feedError, setFeedError] = useState(false)
 
   useEffect(() => {
-    supabase
-      .from('startups')
-      .select('*, ai_scores(*)')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => data && setStartups(data))
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (!url || !key) {
+      setFeedError(true)
+      setLoading(false)
+      return
+    }
+
+    const supabase = createBrowserClient(url, key)
+    let cancelled = false
+
+    const loadStartups = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('startups')
+          .select('*, ai_scores(*)')
+          .order('created_at', { ascending: false })
+
+        if (cancelled) return
+        if (error) setFeedError(true)
+        else setStartups((data || []) as Startup[])
+      } catch {
+        if (!cancelled) setFeedError(true)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void loadStartups()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const startup = startups[current]
-  if (!startup) return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">Loading feed...</div>
+  if (!startup) {
+    const message = loading
+      ? 'Loading feed...'
+      : feedError
+        ? 'The feed is temporarily unavailable.'
+        : 'No pitches are in the feed yet.'
+
+    return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">{message}</div>
+  }
 
   const score = startup.ai_scores?.[0]
 
